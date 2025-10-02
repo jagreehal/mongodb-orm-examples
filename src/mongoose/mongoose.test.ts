@@ -3,6 +3,7 @@ import { connect, disconnect, startSession } from 'mongoose';
 import { beforeAll, describe, expect, test } from 'vitest';
 import { PostModel, User, UserModel } from './models.ts';
 
+
 beforeAll(async () => {
   // @ts-expect-error - this is fine
   await connect(import.meta.env.VITE_DATABASE_URL!);
@@ -13,6 +14,89 @@ beforeAll(async () => {
 });
 
 describe('Mongoose', () => {
+  test('Using InstanceType<typeof UserModel>', async () => {
+    const firstName = faker.person.firstName();
+    const lastName = faker.person.lastName();
+    const email = faker.internet.email();
+    const slug = faker.music.songName() + Date.now();
+    const postTitle = faker.lorem.sentence();
+    const password = faker.internet.password();
+
+    const session = await startSession();
+    await session.startTransaction();
+
+    try {
+      const user = await UserModel.create(
+        [
+          {
+            firstName,
+            lastName,
+            email,
+            password,
+          },
+        ],
+        { session },
+      );
+      const userId = user[0]._id;
+
+      const post = await PostModel.create(
+        [
+          {
+            title: postTitle,
+            body: 'Lots of really interesting stuff',
+            slug,
+            author: userId,
+            comments: [],
+          },
+        ],
+        { session },
+      );
+
+      await UserModel.findByIdAndUpdate(
+        userId,
+        { $push: { posts: post[0]._id } },
+        { session },
+      );
+
+      await session.commitTransaction();
+    } catch (error) {
+      await session.abortTransaction();
+      console.error('Transaction aborted due to an error:', error);
+      throw error;
+    } finally {
+      await session.endSession();
+    }
+
+    const createdUserWithPosts = await UserModel.findOne({ email }).populate('posts');
+
+    if (!createdUserWithPosts) {
+      throw new Error('No created user');
+    }
+
+    const userInstance: InstanceType<typeof UserModel> = createdUserWithPosts;
+
+    // ✅ These work fine - valid fields and methods
+    expect(userInstance.email).toBe(email);
+    expect(userInstance.firstName).toBe(firstName);
+    expect(userInstance.fullName()).toBe(`${firstName} ${lastName}`);
+    expect(typeof userInstance.isValidPassword).toBe('function');
+
+    //@ts-expect-error - Detects type error at compile time
+    const invalidField1 = userInstance.doesNotExist;
+    expect(invalidField1).toBeUndefined();
+
+    // Type safety pitfall: Even with InstanceType, populated fields are not type-safe
+    // This compiles but posts[0] could be ObjectId or Post depending on whether .populate() was called
+    expect(userInstance.posts[0].body).toBe('Lots of really interesting stuff');
+
+    // Type safety pitfall: Without .populate(), posts[0] is an ObjectId, not a Post
+    // TypeScript doesn't catch this - it compiles but fails at runtime
+    const createdUserNoPosts = await UserModel.findOne({ email });
+    // This will be undefined because posts[0] is an ObjectId, not a Post document
+    expect(createdUserNoPosts?.posts[0].body).toBeUndefined();
+
+  });
+
   test('create a user', async () => {
     const firstName = faker.person.firstName();
     const lastName = faker.person.lastName();

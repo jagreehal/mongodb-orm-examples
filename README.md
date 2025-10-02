@@ -24,30 +24,44 @@ The aim of this repository is to illustrate, with genuine code examples, that **
 
 ### Mongoose & Typegoose
 
-1. **Accessing non-existent fields**  
-   TypeScript does not always catch typos or missing fields. For instance, writing `user.notARealField` will compile but fail at runtime.
+> **Important:** Using `InstanceType<typeof UserModel>` improves type safety in Mongoose by catching invalid field access at compile time. However, it does **not** solve the populated relations problem - TypeScript still cannot distinguish between populated and unpopulated fields.
 
-2. **Populated relations**  
+1. **Accessing non-existent fields**
+   Without proper typing, TypeScript does not catch typos or missing fields. For instance, writing `user.notARealField` will compile but fail at runtime.
+
+   **Using `InstanceType<typeof UserModel>` helps:** It provides proper type safety for field access and will catch invalid fields at compile time. IntelliSense autocomplete works correctly, though the type signature shown on hover is complex (e.g., `Document<unknown, {}, UserDocument, {}, {}> & UserDocument & Required<{_id: unknown}> & {__v: number}`).
+
+2. **Populated relations**
    When using `.populate()`, the type of the populated field is not guaranteed. Developers must use runtime checks or casts, undermining static typing.
 
-3. **Instance methods**  
+   **Even with `InstanceType`, this remains a problem:** TypeScript cannot tell whether a field like `user.posts[0]` contains an ObjectId or a populated Post document. Accessing `user.posts[0].body` compiles successfully whether or not `.populate('posts')` was called, but fails at runtime when unpopulated. Prisma solves this with its `include` system, where types change based on the query.
+
+3. **Instance methods**
    Converting a Mongoose document to a plain object (e.g. with `.toJSON()`) causes instance methods to be lost, yet TypeScript issues no warning.
 
-#### Example from tests
+#### Mongoose example from tests
 
 ```ts
-// These lines compile, but are unsafe and may fail at runtime:
-// @ts-expect-error This should error, but Mongoose/Typegoose allows it
+// Without InstanceType - this compiles but shouldn't:
+// @ts-expect-error This should error, but Mongoose allows it at runtime
 expect(createdUser?.notARealField).toBeUndefined();
 
-// Populated fields are not type-safe
-// @ts-expect-error TypeScript cannot guarantee this is a Post
-expect(createdUser?.posts[0].body).toBe('Lots of really interesting stuff');
-Prisma
-Compile-time safety
-All model fields, relations and methods are type-checked. Accessing a non-existent field or relation results in a compile-time error.
+// With InstanceType - this DOES get caught by TypeScript:
+const userInstance: InstanceType<typeof UserModel> = createdUser;
+// @ts-expect-error - Detects type error at compile time
+const invalidField = userInstance.doesNotExist;
 
-Example from tests
+// Populated fields are not type-safe (even with InstanceType):
+// This compiles but posts[0] could be ObjectId or Post depending on .populate()
+expect(userInstance.posts[0].body).toBe('Lots of really interesting stuff');
+```
+
+### Prisma
+
+**Compile-time safety**: All model fields, relations and methods are type-checked. Accessing a non-existent field or relation results in a compile-time error.
+
+#### Prisma example from tests
+
 ```ts
 // The following would fail to compile:
 // @ts-expect-error Property 'notARealField' does not exist on type 'User'
