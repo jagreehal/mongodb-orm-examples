@@ -97,13 +97,14 @@ describe('Typegoose', () => {
       expect('Author is not populated').toBeFalsy();
     }
 
-    // Type safety pitfall: Accessing a non-existent field compiles, but fails at runtime
-    // @ts-expect-error This should error, but Typegoose allows it at runtime
+    // Invalid fields ARE caught at compile time (DocumentType from findOne).
+    // @ts-expect-error - Property 'notARealField' does not exist
     expect(createdUser?.notARealField).toBeUndefined();
 
-    // Type safety pitfall: Populated fields are not type-safe
-    // The type of createdUser?.posts[0] is not guaranteed to be a Post document
-    // @ts-expect-error TypeScript cannot guarantee this is a Post
+    // Populate pitfall: `.populate('posts')` does NOT refine `Ref<Post>` → Post.
+    // Accessing `.body` without `isDocument()` is a type error (good), but unlike
+    // Prisma `.include()`, you must still narrow with a runtime type guard.
+    // @ts-expect-error - Property 'body' does not exist on type 'Ref<Post>'
     expect(createdUser?.posts[0].body).toBe('Lots of really interesting stuff');
   });
 });
