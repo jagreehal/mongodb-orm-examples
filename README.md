@@ -2,34 +2,35 @@
 
 This repository demonstrates the differences in type safety between three popular Node.js ORMs/ODMs for MongoDB:
 
-- **Prisma**
+- **Prisma 8** (`@prisma/orm-mongo`)
 - **Mongoose**
 - **Typegoose**
+- **Vanilla MongoDB driver**
 
 ## Purpose
 
-The aim of this repository is to illustrate, with genuine code examples, that **Prisma** delivers true end-to-end type safety, whereas **Mongoose** and **Typegoose** exhibit notable type-safety limitations that may precipitate runtime errors and bugs undetected by TypeScript.
+The aim of this repository is to illustrate, with genuine code examples, how **Prisma 8**, **Mongoose**, and **Typegoose** differ on end-to-end type safety — especially around relations / population.
 
 ## Comparison of Type Safety
 
-| Feature                          | Prisma    | Mongoose     | Typegoose    |
+| Feature                          | Prisma 8  | Mongoose     | Typegoose 13 |
 | -------------------------------- | --------- | ------------ | ------------ |
-| Compile-time type checking       | ✅ Yes    | ⚠️ Partial   | ⚠️ Partial   |
-| Type-safe relations/population   | ✅ Yes    | ❌ No        | ❌ No        |
-| Type-safe field access           | ✅ Yes    | ❌ No        | ❌ No        |
-| Type-safe instance methods       | ✅ Yes    | ❌ No        | ❌ No        |
-| Type errors caught by TypeScript | ✅ Always | ⚠️ Sometimes | ⚠️ Sometimes |
+| Compile-time type checking       | ✅ Yes    | ⚠️ Partial   | ✅ Yes       |
+| Type-safe relations/population   | ✅ Yes    | ❌ No        | ⚠️ Guarded   |
+| Type-safe field access           | ✅ Yes    | ⚠️ With help | ✅ Yes       |
+| Type-safe instance methods       | ✅ Yes    | ❌ No        | ⚠️ Partial   |
+| Type errors caught by TypeScript | ✅ Always | ⚠️ Sometimes | ✅ Usually   |
 
 ## Type-Safety Pitfalls
 
-### Mongoose & Typegoose
+### Mongoose
 
 > **Important:** Using `InstanceType<typeof UserModel>` improves type safety in Mongoose by catching invalid field access at compile time. However, it does **not** solve the populated relations problem - TypeScript still cannot distinguish between populated and unpopulated fields.
 
 1. **Accessing non-existent fields**
    Without proper typing, TypeScript does not catch typos or missing fields. For instance, writing `user.notARealField` will compile but fail at runtime.
 
-   **Using `InstanceType<typeof UserModel>` helps:** It provides proper type safety for field access and will catch invalid fields at compile time. IntelliSense autocomplete works correctly, though the type signature shown on hover is complex (e.g., `Document<unknown, {}, UserDocument, {}, {}> & UserDocument & Required<{_id: unknown}> & {__v: number}`).
+   **Using `InstanceType<typeof UserModel>` helps:** It provides proper type safety for field access and will catch invalid fields at compile time.
 
 2. **Populated relations**
    When using `.populate()`, the type of the populated field is not guaranteed. Developers must use runtime checks or casts, undermining static typing.
@@ -56,16 +57,42 @@ const invalidField = userInstance.doesNotExist;
 expect(userInstance.posts[0].body).toBe('Lots of really interesting stuff');
 ```
 
-### Prisma
+### Typegoose 13
 
-**Compile-time safety**: All model fields, relations and methods are type-checked. Accessing a non-existent field or relation results in a compile-time error.
+**Field access is type-safe** — `findOne` returns a `DocumentType`-shaped document, so invalid fields are compile errors.
 
-#### Prisma example from tests
+**Populate is still the gap vs Prisma:** `.populate('posts')` does not refine `Ref<Post>` to `Post`. Unsafe `.body` access is rejected (good), but you must narrow with `isDocument()` at runtime. Prisma `.include('posts')` changes the result type instead.
+
+#### Typegoose example from tests
 
 ```ts
+// Invalid fields are caught:
+// @ts-expect-error - Property 'notARealField' does not exist
+expect(createdUser?.notARealField).toBeUndefined();
+
+// Populate does not refine Ref<Post> — need isDocument():
+if (isDocument(createdUser?.posts[0])) {
+  expect(createdUser.posts[0].title).toBe(postTitle);
+}
+
+// @ts-expect-error - Property 'body' does not exist on type 'Ref<Post>'
+expect(createdUser?.posts[0].body).toBe('Lots of really interesting stuff');
+```
+
+### Prisma 8
+
+**Compile-time safety**: All model fields, relations and methods are type-checked from the emitted contract. Accessing a non-existent field or relation results in a compile-time error. Relations use `.include('posts')` / `.include('author')`, which change the result type.
+
+#### Prisma 8 example from tests
+
+```ts
+const userWithPosts = await db.orm.users
+  .where({ email })
+  .include('posts')
+  .first();
+
 // The following would fail to compile:
-// @ts-expect-error Property 'notARealField' does not exist on type 'User'
-// expect(createdUser?.notARealField).toBeUndefined();
+// expect(userWithPosts?.notARealField).toBeUndefined();
 ```
 
 ### Usage
@@ -74,15 +101,16 @@ Install dependencies:
 
 ```sh
 pnpm install
+pnpm contract:emit
 ```
+
+Prisma 8 uses a contract (`src/prisma/contract.prisma`) instead of `schema.prisma` + `prisma generate`. `contract emit` writes `src/prisma/contract.json` and `src/prisma/contract.d.ts`.
 
 ### Configure your MongoDB connection
 
-Add your connection string to the environment (see test files for usage of VITE_DATABASE_URL).
+Set `VITE_DATABASE_URL` in `.env` (see `.env.example`).
 
 ### Run the tests
-
-Run the tests:
 
 ```sh
 pnpm test
@@ -90,8 +118,8 @@ pnpm test
 
 ### Summary
 
-Prisma: Provides genuine end-to-end type safety. All type errors are caught at compile time, making it ideal for large codebases and teams.
+Prisma 8: End-to-end type safety, `.include()` refines relation types at compile time.
 
-Mongoose/Typegoose: Offers flexibility but limited type safety. Common mistakes—especially around relations and populated fields—are not caught by TypeScript.
+Typegoose 13: Strong field-level typing; populate still needs `isDocument()` because `.populate()` does not change `Ref<T>`.
 
-Recommendation: If type safety is a priority, choose Prisma for your Node.js projects.
+Mongoose: Flexible but weaker defaults — often needs `InstanceType` / casts, and populate still does not refine types.

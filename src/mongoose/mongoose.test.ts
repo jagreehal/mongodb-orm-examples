@@ -39,6 +39,7 @@ describe('Mongoose', () => {
       );
       const userId = user[0]._id;
 
+      // @ts-expect-error - No overload matches this call.
       const post = await PostModel.create(
         [
           {
@@ -54,6 +55,7 @@ describe('Mongoose', () => {
 
       await UserModel.findByIdAndUpdate(
         userId,
+        // @ts-expect-error - Property '_id' does not exist on type 'never'.
         { $push: { posts: post[0]._id } },
         { session },
       );
@@ -122,6 +124,7 @@ describe('Mongoose', () => {
       );
       const userId = user[0]._id;
 
+      // @ts-expect-error - No overload matches this call.
       const post = await PostModel.create(
         [
           {
@@ -137,6 +140,7 @@ describe('Mongoose', () => {
 
       await UserModel.findByIdAndUpdate(
         userId,
+        // @ts-expect-error - Property '_id' does not exist on type 'never'.
         { $push: { posts: post[0]._id } },
         { session },
       );
@@ -187,6 +191,7 @@ describe('Mongoose', () => {
     expect(userInDB.fullName()).toBe(`${firstName} ${lastName}`);
 
     const postsWrittenByUser = await PostModel.find({
+      // @ts-expect-error - Type 'ObjectId' is not assignable to type 'FilterOperators<User | User[] | null>'.
       author: userInDB._id,
     }).populate('author');
 

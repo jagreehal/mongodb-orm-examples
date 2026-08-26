@@ -95,10 +95,9 @@ export const userSchema: Schema<User> = new Schema<User>(
   },
 );
 
-userSchema.pre('save', async function (next) {
+userSchema.pre('save', async function () {
   const hashedPassword = await hashPassword(this.password);
   this.password = hashedPassword;
-  next();
 });
 
 const postSchema = new Schema<Post>(
